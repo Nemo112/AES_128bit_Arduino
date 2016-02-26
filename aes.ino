@@ -51,14 +51,26 @@ byte sbox(byte p_get) {
 }
 
 // My work! beranm14
-void printMatrix(unsigned char * wrd){
-  for(byte i=0; i<4; i++){
-    for(byte j=0; j<4; j++){   
-      Serial.print(((byte)wrd[(4*i)+j]));
+void printMatrix(unsigned char * wrd, byte x = 4, byte y = 4){
+  for(byte i=0; i<x; i++){
+    for(byte j=0; j<y; j++){   
+      Serial.print(((byte)wrd[(4*i)+j]),HEX);
       Serial.print(" "); 
     } 
     Serial.print("\n");
   }
+}
+
+void printExpKey(unsigned char * key){
+  unsigned char * tmp = key;
+  byte i = 0;
+  while (i<176){
+    if(i%16 == 0)
+      Serial.print("\n");
+    Serial.print(((byte)key[i]),HEX);
+    i++;
+  }
+  Serial.print("\n");
 }
 
 // My work! beranm14
@@ -68,10 +80,13 @@ void ShiftRows(unsigned char * wrd,unsigned char * tmp){
       tmp[(4*i)+j] = wrd[(4*i)+(j+i)%4];   
     } 
   }
+ for(byte i=0; i<16; i++){
+    wrd[i] = tmp[i]; 
+ }
 }
 
 // Wiki
-void MixColumns(unsigned char * wrd){
+void MixFour(unsigned char * wrd){  
         unsigned char a[4];
         unsigned char b[4];
         unsigned char c;
@@ -93,6 +108,19 @@ void MixColumns(unsigned char * wrd){
         wrd[3] = b[3] ^ a[2] ^ a[1] ^ b[0] ^ a[0]; /* 2 * a3 + a2 + a1 + 3 * a0 */
 }
 
+void MixColumns(unsigned char * wrd){
+    unsigned char tmp[4];
+    for (byte i = 0; i<4; i++){
+      for (byte j = 0; j<4; j++){
+        tmp[j] = wrd[j*4+i];
+      }
+      MixFour(tmp);
+      for (byte j = 0; j<4; j++){
+        wrd[j*4+i] = tmp[j];
+      }
+    }
+}
+
 //http://www.samiam.org/key-schedule.html
 void schedule_core(unsigned char *in, unsigned char i) {
         char a;
@@ -106,15 +134,14 @@ void schedule_core(unsigned char *in, unsigned char i) {
 }
 
 //http://www.samiam.org/key-schedule.html
-unsigned char i; // needs to be reset, not enough memory for 172 Bytes, therefore in expand key we'll get only 128 new bits of key
-void expand_key(unsigned char *in, unsigned char *out) { //128 bit to another 128 bits
+void expand_key(unsigned char *in) { //128 bit to another 128 bits
         unsigned char t[4];
         /* c is 16 because the first sub-key is the user-supplied key */
         unsigned char c = 16;
+        unsigned char i = 1;
         unsigned char a;
-
         /* We need 11 sets of sixteen bytes each for 128-bit mode */
-        while(c < 32 /*< 176*/) { // change to just another 128 bits
+        while(c < 176) {
                 /* Copy the temporary variable over from the last 4-byte
                  * block */
                 for(a = 0; a < 4; a++) 
@@ -122,36 +149,56 @@ void expand_key(unsigned char *in, unsigned char *out) { //128 bit to another 12
                 /* Every four blocks (of four bytes), 
                  * do a complex calculation */
                 if(c % 16 == 0) {
-                  schedule_core(t,i);
-                  i++;
+                    schedule_core(t,i);
+                    i++;
                 }
                 for(a = 0; a < 4; a++) {
-                        out[c-16] = in[c - 16] ^ t[a];
-                        c++;
+                    in[c] = in[c - 16] ^ t[a];
+                    c++;
                 }
         }
 }
 
-unsigned char * AES_encrypt_128(unsigned char * wrd, unsigned char * key, unsigned char * tmp){
-    // i for key expansion
-    i = 1;
-    unsigned char  tmp_key[22];
-    //
-    printMatrix(wrd);
-    expand_key(key,tmp_key);
-    // initial round
-    add_round_key(key,);
-    // rounds
+void add_round_key(unsigned char * key, unsigned char * wrd){
+  for(byte i=0;i<16;i++){
+    wrd[i] = wrd[i] ^ key[i];   
+  }
+}
 
+unsigned char * AES_encrypt_128(unsigned char * wrd, unsigned char * key, unsigned char * tmp){
+    //
+    printMatrix(key);
+    // initial round
+    expand_key(key);
+    add_round_key(key, wrd);
+    key+=16;
+    // rounds
+    for(byte i = 0; i<8; i++){
+      // sub bytes
+      for (byte i = 0;i<16;i++){
+        wrd[i] = sbox(wrd[i]);
+      }
+      // shift rows
+      ShiftRows(wrd,tmp);
+      // mix columns
+      MixColumns(wrd);
+      // mix with keys
+      add_round_key(key, wrd);
+      key+=16;
+    }
     // final round
-    /*for (byte i = 0;i<16;i++){
+    // sub bytes
+    for (byte i = 0;i<16;i++){
       wrd[i] = sbox(wrd[i]);
-    }*/
+    }
+    // shift rows  
     ShiftRows(wrd,tmp);
+    // mix with keys
+    add_round_key(key, wrd);
+    //======================
     Serial.print("\n");
-    printMatrix(tmp);
+    printMatrix(wrd);
     Serial.print("\n\n");
-    MixColumns(tmp);
     Serial.print("\n\n");
 }
 
@@ -159,11 +206,28 @@ void setup() {
   Serial.begin(9600);
 }
 
-
+void translate_matrix(unsigned char * mat){
+  for(byte i = 0; i < 4 ;i ++)
+    for(byte j = 0; j < 4 ;j ++){
+      if (i != j){
+        byte tmp = mat[i*4+j];
+        mat[i*4+j] = mat[j*4+i];
+        mat[j*4+i] = tmp;
+      }  
+   }
+}
 
 void loop() {
-  unsigned char  key[22] = { 0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x08,0x09,0x0A,0x0B,0x0C,0x0D,0x0E,0x0F,0x10};
+  //unsigned char  key[172] = { 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00};
+  //unsigned char  key[172] = { 219,19,83,69,   242, 10, 34, 92,   1,1,1,1,    198, 198, 198, 198 };
+  unsigned char  key[172] = { 0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x08,0x09,0x0A,0x0B,0x0C,0x0D,0x0E,0x0F,0x10};
   unsigned char  wrd[16] = { 0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x08,0x09,0x0A,0x0B,0x0C,0x0D,0x0E,0x0F,0x10};
+  printMatrix(key);
+  translate_matrix(key);
+   Serial.print("\n");
+  printMatrix(key);
+   delay(100000);
+  translate_matrix(wrd);
   unsigned char  tmp[16] = {};
   AES_encrypt_128(wrd, key, tmp);
   // put your main code here, to run repeatedly:
