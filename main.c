@@ -312,19 +312,20 @@ void addRoundKey(unsigned char * key, unsigned char * wrd){
 
 void InvSubByte(unsigned char * wrd){
   for (unsigned char i = 0;i<16;i++){
-        unsigned char x = wrd[i] & 15;
+        /*unsigned char x = wrd[i] & 15;
         unsigned char y = wrd[i] >> 4 & 15;
-        unsigned char gtxy = y*16+x;
-        wrd[i] = sbox_inv(gtxy);
+        unsigned char gtxy = y*16+x;*/
+        wrd[i] = sbox_inv(wrd[i]);
   }  
 }
 
 void SubByte(unsigned char * wrd){
   for (unsigned char i = 0;i<16;i++){
-        unsigned char x = wrd[i] & 15;
+        /*unsigned char x = wrd[i] & 15;
         unsigned char y = wrd[i] >> 4 & 15;
         unsigned char gtxy = y*16+x;
-        wrd[i] = sbox(gtxy);
+        wrd[i] = sbox(gtxy);*/
+        wrd[i] = sbox(wrd[i]);
   }  
 }
 
