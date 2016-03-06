@@ -46,7 +46,9 @@ void loop() {
           key[cn] = Serial.read();
           cn ++;           
         }
-        saveKey(key,30);    
+        for(byte i = 0; i < 16; i++)
+          Serial.write(key[i]);
+        saveKey(key,30);
       }
   }
   /*
